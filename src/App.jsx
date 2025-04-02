@@ -8,7 +8,7 @@ import './App.css';
 
 function App() {
   // State for API endpoint configuration
-  const [apiBaseUrl, setApiBaseUrl] = useState('http://192.168.1.103:4000/api');
+  const [apiBaseUrl, setApiBaseUrl] = useState('http://172.16.26.65:4000/api');
   const [razorpayKeyId, setRazorpayKeyId] = useState('');
   const [authToken, setAuthToken] = useState('');
   
@@ -202,100 +202,172 @@ useEffect(() => {
   };
   
   // Order creation function
-  const createOrder = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      setSuccess(null);
-      
-      if (!branchId) {
-        setError("Branch ID is required");
-        setLoading(false);
-        return;
-      }
-      
-      if (selectedItems.length === 0) {
-        setError("Please add at least one item to the order");
-        setLoading(false);
-        return;
-      }
-      
-      // Prepare the order payload
-      const orderPayload = {
-        branch: branchId,
-        items: selectedItems.map(item => ({
-          _id: item._id,
-          quantity: item.quantity,
-          price: item.price,
-          taxSlab: item.taxSlab,
-          variant: item.variant,
-          addOns: item.addOns
-        })),
-        orderType: "Delivery",
-        paymentMethod: "Online",
-        deliveryAddress,
-        customer: userData ? {
-          phoneNumber: userData.phoneNumber,
-          name: userData.name
-        } : null
-      };
-      
-      // First, calculate the order total
-      const calculationResponse = await axios.post(
-        `${apiBaseUrl}/order/calculate`, 
-        orderPayload,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`
-          }
-        }
-      );
-      
-      // Add the calculation details to the order payload
-      const fullOrderPayload = {
-        ...orderPayload,
-        subTotal: calculationResponse.data.subTotal,
-        grandTotal: calculationResponse.data.grandTotal,
-        packagingCharges: calculationResponse.data.packagingCharges,
-        packagingChargesTax: calculationResponse.data.packagingChargesTax,
-        platformFee: calculationResponse.data.platformFee,
-        platformFeeTax: calculationResponse.data.platformFeeTax,
-        deliveryCharge: calculationResponse.data.deliveryCharge,
-        deliveryTax: calculationResponse.data.deliveryTax
-      };
-      
-      // Create the order
-      const orderResponse = await axios.post(
-        `${apiBaseUrl}/order/create`, 
-        fullOrderPayload,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`
-          }
-        }
-      );
-      
-      setCreatedOrder(orderResponse.data.order);
-      setSuccess(`Order created successfully with ID: ${orderResponse.data.order._id}`);
+// Updated createOrder function
+const createOrder = async () => {
+  try {
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    
+    if (!branchId) {
+      setError("Branch ID is required");
       setLoading(false);
-      
-      // Automatically initiate payment if order created successfully
-      if (orderResponse.data.paymentInitData && orderResponse.data.paymentInitData.razorpayOrderId) {
-        initiateRazorpayCheckout(
-          orderResponse.data.paymentInitData.razorpayOrderId,
-          orderResponse.data.paymentInitData.amount,
-          `Payment for Order #${orderResponse.data.order._id}`,
-          razorpayKeyId,
-          onPaymentSuccess('order')
-        );
-      }
-      
-    } catch (err) {
-      console.error("Error creating order:", err.response || err);
-      setError(err.response?.data?.error || err.response?.data?.message || err.message || "An unknown error occurred");
-      setLoading(false);
+      return;
     }
-  };
+    
+    if (selectedItems.length === 0) {
+      setError("Please add at least one item to the order");
+      setLoading(false);
+      return;
+    }
+    
+    // Prepare the order payload
+    const orderPayload = {
+      branch: branchId,
+      items: selectedItems.map(item => ({
+        _id: item._id,
+        quantity: item.quantity,
+        price: item.price,
+        taxSlab: item.taxSlab,
+        variant: item.variant,
+        addOns: item.addOns
+      })),
+      orderType: "Delivery",
+      paymentMethod: "Online",
+      deliveryAddress,
+      customer: userData ? {
+        phoneNumber: userData.phoneNumber,
+        name: userData.name
+      } : null
+    };
+    
+    // First, calculate the order total
+    const calculationResponse = await axios.post(
+      `${apiBaseUrl}/order/calculate`, 
+      orderPayload,
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      }
+    );
+    
+    // Add the calculation details to the order payload
+    const fullOrderPayload = {
+      ...orderPayload,
+      subTotal: calculationResponse.data.subTotal,
+      grandTotal: calculationResponse.data.grandTotal,
+      packagingCharges: calculationResponse.data.packagingCharges,
+      packagingChargesTax: calculationResponse.data.packagingChargesTax,
+      platformFee: calculationResponse.data.platformFee,
+      platformFeeTax: calculationResponse.data.platformFeeTax,
+      deliveryCharge: calculationResponse.data.deliveryCharge,
+      deliveryTax: calculationResponse.data.deliveryTax
+    };
+    
+    // Create the order
+    const orderResponse = await axios.post(
+      `${apiBaseUrl}/order/create`, 
+      fullOrderPayload,
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      }
+    );
+    
+    setCreatedOrder(orderResponse.data.order);
+    setSuccess(`Order created successfully with ID: ${orderResponse.data.order._id}`);
+    
+    // Automatically initiate payment if order created successfully
+    if (orderResponse.data.paymentInitData && orderResponse.data.paymentInitData.razorpayOrderId) {
+      // Create customer info for Razorpay
+      const prefillData = {
+        name: userData ? userData.name : customerName || "Test User",
+        email: "test@example.com", // You might want to add email to your form
+        contact: userData ? userData.phoneNumber : customerPhone || "9999999999"
+      };
+      
+      // Define a custom handler for Razorpay payment success
+      const handleRazorpayResponse = async (response) => {
+        try {
+          setLoading(true);
+          
+          // Store Razorpay response data
+          setRazorpayOrderId(response.razorpay_order_id);
+          setRazorpayPaymentId(response.razorpay_payment_id);
+          setRazorpaySignature(response.razorpay_signature);
+          
+          // Call the payment verification endpoint
+          const verificationResponse = await axios.post(
+            `${apiBaseUrl}/payment/verify`,
+            {
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${authToken}`
+              }
+            }
+          );
+          
+          setSuccess(`Payment verified successfully! ${verificationResponse.data.message || ''}`);
+          
+          // After successful payment verification, fetch the updated order details
+          try {
+            const updatedOrderResponse = await axios.get(
+              `${apiBaseUrl}/order/${orderResponse.data.order._id}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${authToken}`
+                }
+              }
+            );
+            
+            // Update the order in state with the latest data
+            if (updatedOrderResponse.data) {
+              setCreatedOrder(updatedOrderResponse.data);
+            }
+          } catch (orderFetchError) {
+            console.error("Error fetching updated order:", orderFetchError);
+          }
+          
+          setLoading(false);
+        } catch (err) {
+          console.error("Error verifying payment:", err.response || err);
+          setError(err.response?.data?.error || err.response?.data?.message || err.message || "An unknown error occurred during payment verification");
+          setLoading(false);
+        }
+      };
+      
+      // Open the Razorpay checkout
+      const options = {
+        key: razorpayKeyId,
+        amount: orderResponse.data.paymentInitData.amount,
+        currency: "INR",
+        name: "Roll2Bowl",
+        description: `Payment for Order #${orderResponse.data.order._id}`,
+        order_id: orderResponse.data.paymentInitData.razorpayOrderId,
+        handler: handleRazorpayResponse,
+        prefill: prefillData,
+        theme: {
+          color: "#F37254"
+        }
+      };
+      
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+    }
+    
+    setLoading(false);
+  } catch (err) {
+    console.error("Error creating order:", err.response || err);
+    setError(err.response?.data?.error || err.response?.data?.message || err.message || "An unknown error occurred");
+    setLoading(false);
+  }
+};
   
   // Subscription purchase function
   const initiateSubscriptionPurchase = async () => {
@@ -578,8 +650,11 @@ useEffect(() => {
                       <Form.Label>Branch ID</Form.Label>
                       <Form.Control 
                         type="text" 
-                        value={branchId} 
-                        onChange={(e) => setBranchId(e.target.value)}
+                        value={branchId}
+                        onChange={(e) => {
+                          setBranchId(e.target.value);
+                          setSelectedItems([]); // Clear selected food items
+                        }}
                         placeholder="Enter branch ID" 
                       />
                     </Form.Group>
