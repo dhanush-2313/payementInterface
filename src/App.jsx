@@ -8,8 +8,8 @@ import './App.css';
 
 function App() {
   // State for API endpoint configuration
-  const [apiBaseUrl, setApiBaseUrl] = useState('http://172.16.26.65:4000/api');
-  const [razorpayKeyId, setRazorpayKeyId] = useState('');
+  const [apiBaseUrl, setApiBaseUrl] = useState('http://192.168.1.103:8080/api');
+  const [razorpayKeyId, setRazorpayKeyId] = useState('rzp_test_LKwcKdhRp0mq9f');
   const [authToken, setAuthToken] = useState('');
   
   // State for managing UI and workflow
